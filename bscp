@@ -23,6 +23,9 @@ import struct
 import subprocess
 import sys
 
+# define width of progress bars as float (compatibility with python2)
+PROGRESSBAR_WIDTH = 80.0
+
 remote_script = r'''
 import hashlib
 import os
@@ -137,9 +140,21 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
         if remote_size < size:
             raise RuntimeError('Remote size less than local (local: %i, remote: %i)' % (size, remote_size))
         sys.stderr.write('receiving remote digests, %d blocks\n' %(blockcount))
-        remote_digest_list = [io.read(hash_total.digestsize) for i in xrange(blockcount)]
 
+        remote_digest_list = []
+        blocks_progress_block = blockcount / PROGRESSBAR_WIDTH
+        blocks_progress = 0.0
+        for i in xrange(blockcount):
+            remote_digest_list.append(io.read(hash_total.digestsize))
+            blocks_progress += 1
+            if blocks_progress >= blocks_progress_block:
+                sys.stderr.write(".")
+                blocks_progress -= blocks_progress_block
+        sys.stderr.write("\n")
         sys.stderr.write('computing local digests and sending updates\n')
+        sys.stderr.write('digit in progress bar represents fraction of changed blocks\n')
+        blocks_progress = 0.0
+        blocks_progress_modified = 0
         for remote_digest in remote_digest_list:
             position = f.tell()
             block = f.read(blocksize)
@@ -151,8 +166,25 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
                     io.write(block)
                 except IOError:
                     break
-        p.stdin.close()
+                blocks_progress_modified += 1
+            blocks_progress += 1
+            if blocks_progress >= blocks_progress_block:
+                if blocks_progress_modified == 0:
+                    sys.stderr.write(".")
+                else:
+                    blocks_progress_mark = "%1.0f" % (10 * blocks_progress_modified / blocks_progress_block - 1)
+                    if len(blocks_progress_mark) > 1:
+                        if blocks_progress_mark[0] == "-":
+                            sys.stderr.write("0")
+                        else:
+                            sys.stderr.write("9")
+                    else:
+                        sys.stderr.write(blocks_progress_mark)
+                    blocks_progress_modified = 0
+                blocks_progress -= blocks_progress_block
+        sys.stderr.write("\n")
 
+        p.stdin.close()
         sys.stderr.write("computing final hash of remote\n")
         remote_digest_total = io.read()
         p.wait()
