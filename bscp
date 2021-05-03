@@ -119,6 +119,7 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
 
         remote_command = 'python -c "%s"' % (remote_script,)
         command = ('ssh', '-C', '-c', 'aes128-gcm@openssh.com', '--', remote_host, remote_command)
+        sys.stderr.write('starting sync\n')
         p = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         io = IOCounter(p.stdout, p.stdin)
 
@@ -135,8 +136,10 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
         (remote_size,) = struct.unpack('<Q', io.read(8))
         if remote_size < size:
             raise RuntimeError('Remote size less than local (local: %i, remote: %i)' % (size, remote_size))
+        sys.stderr.write('receiving remote digests, %d blocks\n' %(blockcount))
         remote_digest_list = [io.read(hash_total.digestsize) for i in xrange(blockcount)]
 
+        sys.stderr.write('computing local digests and sending updates\n')
         for remote_digest in remote_digest_list:
             position = f.tell()
             block = f.read(blocksize)
@@ -150,6 +153,7 @@ def bscp(local_filename, remote_host, remote_filename, blocksize, hashname):
                     break
         p.stdin.close()
 
+        sys.stderr.write("computing final hash of remote\n")
         remote_digest_total = io.read()
         p.wait()
         if remote_digest_total != hash_total.digest():
